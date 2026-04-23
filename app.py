@@ -33,6 +33,14 @@ PC2 = [14,17,11,24,1,5,3,28,15,6,21,10,23,19,12,4,26,8,16,7,27,20,13,2,
        41,52,31,37,47,55,30,40,51,45,33,48,44,49,39,56,34,53,46,42,50,36,29,32]
 SHIFTS = [1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,1]
 
+def char_to_int(c):
+    # 'A' -> 0, 'B' -> 1, ..., 'Z' -> 25
+    return ord(c.upper()) - ord('A')
+
+def int_to_char(n):
+    # 0 -> 'A', 1 -> 'B', ..., 25 -> 'Z'
+    return chr((n % 26) + ord('A'))
+
 def permute(block, table):
     return [block[i-1] for i in table]
 
@@ -433,6 +441,93 @@ def add_cors(r):
     r.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return r
 
+# RSA (Basé sur le cours p.27-28)
+def num_to_alpha_string(n):
+    """Convertit un grand nombre en une chaîne de lettres (Base26)"""
+    if n == 0: return 'A'
+    res = ""
+    while n > 0:
+        res = chr((n % 26) + ord('A')) + res
+        n //= 26
+    return res
+
+def alpha_string_to_num(s):
+    """Convertit une chaîne de lettres en nombre"""
+    n = 0
+    for char in s:
+        n = n * 26 + (ord(char) - ord('A'))
+    return n
+
+def rsa_process(text, key_data, mode='encrypt'):
+    key_val, n = map(int, key_data.split(','))
+    
+    if mode == 'encrypt':
+        # Nettoyage : on ne garde que les lettres
+        clean_text = ''.join(filter(str.isalpha, text)).upper()
+        results = []
+        for char in clean_text:
+            m = ord(char) - ord('A')
+            c = pow(m, key_val, n)
+            # On transforme le nombre chiffré en "mot" de lettres
+            results.append(num_to_alpha_string(c))
+        # On sépare les mots par des espaces pour pouvoir les découper après
+        return ' '.join(results)
+    
+    else:
+        # On récupère les groupes de lettres
+        blocks = text.split()
+        decrypted_chars = []
+        for block in blocks:
+            c = alpha_string_to_num(block)
+            m = pow(c, key_val, n)
+            decrypted_chars.append(chr((m % 26) + ord('A')))
+        return ''.join(decrypted_chars)
+# ElGamal (Basé sur le cours p.30-32)
+def elgamal_encrypt(text, params):
+    # params format: "p,g,y,k"
+    p, g, y, k = map(int, params.split(','))
+    clean_text = ''.join(filter(str.isalpha, text)).upper()
+    results = []
+    
+    for char in clean_text:
+        m = ord(char) - ord('A')
+        if m >= p:
+            raise ValueError(f"Le caractère {char} (valeur {m}) est >= p ({p}).")
+            
+        c1 = pow(g, k, p)
+        c2 = (m * pow(y, k, p)) % p
+        
+        # On convertit c1 et c2 en lettres et on les lie par un tiret
+        # Exemple : "BC-FZA"
+        results.append(f"{num_to_alpha_string(c1)}-{num_to_alpha_string(c2)}")
+    
+    # On sépare chaque lettre chiffrée par un espace
+    return ' '.join(results)
+
+def elgamal_decrypt(text, params):
+    # params format: "p,s"
+    p, s = map(int, params.split(','))
+    blocks = text.split()
+    results = []
+    
+    for block in blocks:
+        # On sépare le couple c1, c2
+        parts = block.split('-')
+        if len(parts) != 2: continue
+        
+        c1 = alpha_string_to_num(parts[0])
+        c2 = alpha_string_to_num(parts[1])
+        
+        # Calcul de déchiffrement ElGamal
+        r = pow(c1, s, p)
+        r_inv = pow(r, p - 2, p) # Inverse modulaire via Petit Théorème de Fermat
+        m = (c2 * r_inv) % p
+        
+        # Retour au caractère A-Z
+        results.append(chr((m % 26) + ord('A')))
+        
+    return ''.join(results)
+
 CIPHERS = {
     'caesar':   (caesar_encrypt,   caesar_decrypt,   'Shift (1-25)', 'number'),
     'vigenere': (vigenere_encrypt,  vigenere_decrypt,  'Keyword (letters only)', 'text'),
@@ -441,7 +536,10 @@ CIPHERS = {
     'railfence':(railfence_encrypt, railfence_decrypt, 'Number of rails (2+)', 'number'),
     'des':      (des_encrypt,       des_decrypt,       'Up to 8-char key', 'text'),
     'aes':      (aes_encrypt,       aes_decrypt,       'Up to 16-char key', 'text'),
+    'rsa':      (rsa_process,       rsa_process,       'Format: key,n', 'text'),
+    'elgamal':  (elgamal_encrypt,   elgamal_decrypt,   'Enc: p,g,y,k | Dec: p,s', 'text'),
 }
+
 
 @app.route('/')
 def index():
@@ -472,6 +570,8 @@ def list_ciphers():
         'key_hint': v[2],
         'key_type': v[3]
     } for k, v in CIPHERS.items()])
+
+
 
 if __name__ == '__main__':
     os.makedirs('static', exist_ok=True)
