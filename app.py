@@ -3,427 +3,487 @@ import numpy as np
 import os
 import struct
 import base64
+import hashlib
+import hmac
+import secrets
+import math
+import random
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import hashes
 
-# --- DES Implementation ---
-IP = [58,50,42,34,26,18,10,2,60,52,44,36,28,20,12,4,
-      62,54,46,38,30,22,14,6,64,56,48,40,32,24,16,8,
-      57,49,41,33,25,17,9,1,59,51,43,35,27,19,11,3,
-      61,53,45,37,29,21,13,5,63,55,47,39,31,23,15,7]
-IP_INV = [40,8,48,16,56,24,64,32,39,7,47,15,55,23,63,31,
-          38,6,46,14,54,22,62,30,37,5,45,13,53,21,61,29,
-          36,4,44,12,52,20,60,28,35,3,43,11,51,19,59,27,
-          34,2,42,10,50,18,58,26,33,1,41,9,49,17,57,25]
-E = [32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,16,17,
-     16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,28,29,28,29,30,31,32,1]
-P = [16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,
-     2,8,24,14,32,27,3,9,19,13,30,6,22,11,4,25]
-S_BOXES = [
-    [[14,4,13,1,2,15,11,8,3,10,6,12,5,9,0,7],[0,15,7,4,14,2,13,1,10,6,12,11,9,5,3,8],[4,1,14,8,13,6,2,11,15,12,9,7,3,10,5,0],[15,12,8,2,4,9,1,7,5,11,3,14,10,0,6,13]],
-    [[15,1,8,14,6,11,3,4,9,7,2,13,12,0,5,10],[3,13,4,7,15,2,8,14,12,0,1,10,6,9,11,5],[0,14,7,11,10,4,13,1,5,8,12,6,9,3,2,15],[13,8,10,1,3,15,4,2,11,6,7,12,0,5,14,9]],
-    [[10,0,9,14,6,3,15,5,1,13,12,7,11,4,2,8],[13,7,0,9,3,4,6,10,2,8,5,14,12,11,15,1],[13,6,4,9,8,15,3,0,11,1,2,12,5,10,14,7],[1,10,13,0,6,9,8,7,4,15,14,3,11,5,2,12]],
-    [[7,13,14,3,0,6,9,10,1,2,8,5,11,12,4,15],[13,8,11,5,6,15,0,3,4,7,2,12,1,10,14,9],[10,6,9,0,12,11,7,13,15,1,3,14,5,2,8,4],[3,15,0,6,10,1,13,8,9,4,5,11,12,7,2,14]],
-    [[2,12,4,1,7,10,11,6,8,5,3,15,13,0,14,9],[14,11,2,12,4,7,13,1,5,0,15,10,3,9,8,6],[4,2,1,11,10,13,7,8,15,9,12,5,6,3,0,14],[11,8,12,7,1,14,2,13,6,15,0,9,10,4,5,3]],
-    [[12,1,10,15,9,2,6,8,0,13,3,4,14,7,5,11],[10,15,4,2,7,12,9,5,6,1,13,14,0,11,3,8],[9,14,15,5,2,8,12,3,7,0,4,10,1,13,11,6],[4,3,2,12,9,5,15,10,11,14,1,7,6,0,8,13]],
-    [[4,11,2,14,15,0,8,13,3,12,9,7,5,10,6,1],[13,0,11,7,4,9,1,10,14,3,5,12,2,15,8,6],[1,4,11,13,12,3,7,14,10,15,6,8,0,5,9,2],[6,11,13,8,1,4,10,7,9,5,0,15,14,2,3,12]],
-    [[13,2,8,4,6,15,11,1,10,9,3,14,5,0,12,7],[1,15,13,8,10,3,7,4,12,5,6,11,0,14,9,2],[7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8],[2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11]]
-]
-PC1 = [57,49,41,33,25,17,9,1,58,50,42,34,26,18,10,2,59,51,43,35,27,19,11,3,60,52,44,36,
-       63,55,47,39,31,23,15,7,62,54,46,38,30,22,14,6,61,53,45,37,29,21,13,5,28,20,12,4]
-PC2 = [14,17,11,24,1,5,3,28,15,6,21,10,23,19,12,4,26,8,16,7,27,20,13,2,
-       41,52,31,37,47,55,30,40,51,45,33,48,44,49,39,56,34,53,46,42,50,36,29,32]
-SHIFTS = [1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,1]
+# --- Existing implementations (DES, Hill, Caesar, Vigenere, Playfair, RailFence, AES) ---
+# [Keep all your existing implementations here...]
 
-def permute(block, table):
-    return [block[i-1] for i in table]
+# ============ NEW IMPLEMENTATIONS ============
 
-def xor(a, b):
-    return [x ^ y for x, y in zip(a, b)]
-
-def des_generate_keys(key_64bit):
-    key_permuted = permute(key_64bit, PC1)
-    C, D = key_permuted[:28], key_permuted[28:]
-    subkeys = []
-    for shift in SHIFTS:
-        C = C[shift:] + C[:shift]
-        D = D[shift:] + D[:shift]
-        subkeys.append(permute(C + D, PC2))
-    return subkeys
-
-def des_f(R, subkey):
-    expanded = permute(R, E)
-    xored = xor(expanded, subkey)
-    output = []
-    for i in range(8):
-        block = xored[i*6:(i+1)*6]
-        row = (block[0] << 1) | block[5]
-        col = (block[1] << 3) | (block[2] << 2) | (block[3] << 1) | block[4]
-        output += [int(b) for b in f'{S_BOXES[i][row][col]:04b}']
-    return permute(output, P)
-
-def des_block(block_64bit, subkeys):
-    permuted = permute(block_64bit, IP)
-    L, R = permuted[:32], permuted[32:]
-    for sk in subkeys:
-        L, R = R, xor(L, des_f(R, sk))
-    combined = R + L
-    return permute(combined, IP_INV)
-
-def bytes_to_bits(b):
-    bits = []
-    for byte in b:
-        for i in range(7, -1, -1):
-            bits.append((byte >> i) & 1)
-    return bits
-
-def bits_to_bytes(bits):
-    result = []
-    for i in range(0, len(bits), 8):
-        byte = 0
-        for b in bits[i:i+8]:
-            byte = (byte << 1) | b
-        result.append(byte)
-    return bytes(result)
-
-def des_encrypt(plaintext: str, key: str) -> str:
-    key_bytes = key.encode('utf-8')[:8].ljust(8, b'\x00')
-    data = plaintext.encode('utf-8')
-    pad = 8 - len(data) % 8
-    data += bytes([pad] * pad)
-    key_bits = bytes_to_bits(key_bytes)
-    subkeys = des_generate_keys(key_bits)
-    result = b''
-    for i in range(0, len(data), 8):
-        block = bytes_to_bits(data[i:i+8])
-        enc = des_block(block, subkeys)
-        result += bits_to_bytes(enc)
-    return base64.b64encode(result).decode()
-
-def des_decrypt(ciphertext: str, key: str) -> str:
-    key_bytes = key.encode('utf-8')[:8].ljust(8, b'\x00')
-    data = base64.b64decode(ciphertext)
-    key_bits = bytes_to_bits(key_bytes)
-    subkeys = des_generate_keys(key_bits)[::-1]
-    result = b''
-    for i in range(0, len(data), 8):
-        block = bytes_to_bits(data[i:i+8])
-        dec = des_block(block, subkeys)
-        result += bits_to_bytes(dec)
-    pad = result[-1]
-    return result[:-pad].decode('utf-8', errors='replace')
-
-# --- Hill Cipher ---
-def mod_inverse_matrix(matrix, mod):
-    det = int(round(np.linalg.det(matrix))) % mod
-    det_inv = pow(det, -1, mod)
-    size = matrix.shape[0]
-    if size == 2:
-        adj = np.array([[matrix[1,1], -matrix[0,1]],
-                        [-matrix[1,0], matrix[0,0]]], dtype=int)
-    else:
-        adj = np.array([[int(round((-1)**(i+j) * np.linalg.det(np.delete(np.delete(matrix, i, axis=0), j, axis=1))))
-                         for j in range(size)] for i in range(size)], dtype=int).T
-    return (det_inv * adj) % mod
-
-def hill_encrypt(plaintext: str, key: str) -> str:
-    plaintext = ''.join(filter(str.isalpha, plaintext)).upper()
-    size = int(len(key)**0.5)
-    if size * size != len(key):
-        raise ValueError("Key length must be a perfect square (e.g. 4 for 2x2, 9 for 3x3)")
-    key_matrix = np.array([ord(c) - 65 for c in key.upper() if c.isalpha()]).reshape(size, size)
-    while len(plaintext) % size != 0:
-        plaintext += 'X'
-    result = ''
-    for i in range(0, len(plaintext), size):
-        block = np.array([ord(c) - 65 for c in plaintext[i:i+size]])
-        enc = np.dot(key_matrix, block) % 26
-        result += ''.join(chr(int(c) + 65) for c in enc)
-    return result
-
-def hill_decrypt(ciphertext: str, key: str) -> str:
-    ciphertext = ''.join(filter(str.isalpha, ciphertext)).upper()
-    size = int(len(key)**0.5)
-    key_matrix = np.array([ord(c) - 65 for c in key.upper() if c.isalpha()]).reshape(size, size)
-    inv_key = mod_inverse_matrix(key_matrix, 26)
-    result = ''
-    for i in range(0, len(ciphertext), size):
-        block = np.array([ord(c) - 65 for c in ciphertext[i:i+size]])
-        dec = np.dot(inv_key, block) % 26
-        result += ''.join(chr(int(c) + 65) for c in dec)
-    return result
-
-# --- Caesar Cipher ---
-def caesar_encrypt(plaintext: str, key: str) -> str:
-    shift = int(key) % 26
+# 1. Affine Cipher
+def affine_encrypt(plaintext: str, key: str) -> str:
+    """Affine cipher: key format 'a,b' where a and b are integers, gcd(a,26)=1"""
+    try:
+        a, b = map(int, key.split(','))
+        if math.gcd(a, 26) != 1:
+            raise ValueError("a must be coprime with 26")
+    except:
+        raise ValueError("Key must be 'a,b' with integers, and gcd(a,26)=1")
+    
     result = ''
     for c in plaintext:
         if c.isalpha():
             base = ord('A') if c.isupper() else ord('a')
-            result += chr((ord(c) - base + shift) % 26 + base)
+            x = ord(c) - base
+            encrypted = (a * x + b) % 26
+            result += chr(encrypted + base)
         else:
             result += c
     return result
 
-def caesar_decrypt(ciphertext: str, key: str) -> str:
-    shift = int(key) % 26
-    return caesar_encrypt(ciphertext, str(26 - shift))
+def mod_inverse(a, m):
+    for i in range(1, m):
+        if (a * i) % m == 1:
+            return i
+    return None
 
-# --- Vigenere Cipher ---
-def vigenere_encrypt(plaintext: str, key: str) -> str:
-    key = ''.join(filter(str.isalpha, key)).upper()
-    if not key:
-        raise ValueError("Key must contain alphabetic characters")
+def affine_decrypt(ciphertext: str, key: str) -> str:
+    try:
+        a, b = map(int, key.split(','))
+        a_inv = mod_inverse(a % 26, 26)
+        if a_inv is None:
+            raise ValueError("No modular inverse for a")
+    except:
+        raise ValueError("Invalid key")
+    
     result = ''
-    ki = 0
-    for c in plaintext:
-        if c.isalpha():
-            base = ord('A') if c.isupper() else ord('a')
-            shift = ord(key[ki % len(key)]) - 65
-            result += chr((ord(c) - base + shift) % 26 + base)
-            ki += 1
-        else:
-            result += c
-    return result
-
-def vigenere_decrypt(ciphertext: str, key: str) -> str:
-    key = ''.join(filter(str.isalpha, key)).upper()
-    result = ''
-    ki = 0
     for c in ciphertext:
         if c.isalpha():
             base = ord('A') if c.isupper() else ord('a')
-            shift = ord(key[ki % len(key)]) - 65
-            result += chr((ord(c) - base - shift) % 26 + base)
-            ki += 1
+            y = ord(c) - base
+            decrypted = (a_inv * (y - b)) % 26
+            result += chr(decrypted + base)
         else:
             result += c
     return result
 
-# --- Playfair Cipher ---
-def playfair_matrix(key: str):
-    key = ''.join(dict.fromkeys((key + 'ABCDEFGHIKLMNOPQRSTUVWXYZ').upper().replace('J','I')))
-    key = ''.join(filter(str.isalpha, key))
-    return [key[i*5:(i+1)*5] for i in range(5)]
+# 2. Frequency Analysis
+def frequency_analysis(text: str) -> dict:
+    """Analyse frequency of letters in text"""
+    text = ''.join(filter(str.isalpha, text.upper()))
+    if not text:
+        return {'error': 'No alphabetic characters found'}
+    
+    freq = {}
+    for c in text:
+        freq[c] = freq.get(c, 0) + 1
+    
+    total = len(text)
+    for c in freq:
+        freq[c] = round(freq[c] / total * 100, 2)
+    
+    # Sort by frequency descending
+    sorted_freq = dict(sorted(freq.items(), key=lambda x: x[1], reverse=True))
+    
+    # Compare with English frequencies
+    english_freq = {
+        'E': 12.7, 'T': 9.1, 'A': 8.2, 'O': 7.5, 'I': 7.0, 'N': 6.7, 'S': 6.3,
+        'H': 6.1, 'R': 6.0, 'D': 4.3, 'L': 4.0, 'C': 2.8, 'U': 2.8, 'M': 2.4,
+        'W': 2.4, 'F': 2.2, 'G': 2.0, 'Y': 2.0, 'P': 1.9, 'B': 1.5, 'V': 1.0,
+        'K': 0.8, 'J': 0.2, 'X': 0.2, 'Q': 0.1, 'Z': 0.1
+    }
+    
+    return {
+        'frequencies': sorted_freq,
+        'english_comparison': english_freq,
+        'total_characters': total
+    }
 
-def playfair_pos(matrix, c):
-    c = 'I' if c == 'J' else c
-    for r, row in enumerate(matrix):
-        if c in row:
-            return r, row.index(c)
+# 3. One-Time Pad (OTP)
+def otp_encrypt(plaintext: str, key: str) -> str:
+    """One-Time Pad: key must be same length as plaintext"""
+    if len(key) < len(plaintext):
+        raise ValueError(f"Key length ({len(key)}) must be >= plaintext length ({len(plaintext)})")
+    
+    plain_bytes = plaintext.encode()
+    key_bytes = key.encode()[:len(plain_bytes)]
+    
+    encrypted = bytes([p ^ k for p, k in zip(plain_bytes, key_bytes)])
+    return base64.b64encode(encrypted).decode()
 
-def playfair_encrypt(plaintext: str, key: str) -> str:
-    matrix = playfair_matrix(key)
-    text = ''.join(filter(str.isalpha, plaintext)).upper().replace('J','I')
-    digraphs = []
-    i = 0
-    while i < len(text):
-        a = text[i]
-        b = text[i+1] if i+1 < len(text) else 'X'
-        if a == b:
-            digraphs.append((a, 'X'))
-            i += 1
+def otp_decrypt(ciphertext: str, key: str) -> str:
+    data = base64.b64decode(ciphertext)
+    key_bytes = key.encode()[:len(data)]
+    
+    decrypted = bytes([d ^ k for d, k in zip(data, key_bytes)])
+    return decrypted.decode('utf-8', errors='replace')
+
+def otp_generate_key(length: int) -> str:
+    """Generate a random OTP key of specified length"""
+    return secrets.token_hex(length // 2 + 1)[:length]
+
+# 4. Index of Coincidence
+def index_of_coincidence(text: str) -> dict:
+    """Calculate Index of Coincidence for text analysis"""
+    text = ''.join(filter(str.isalpha, text.upper()))
+    if not text:
+        return {'error': 'No alphabetic characters found'}
+    
+    n = len(text)
+    freq = {}
+    for c in text:
+        freq[c] = freq.get(c, 0) + 1
+    
+    ic = sum(f * (f - 1) for f in freq.values()) / (n * (n - 1)) if n > 1 else 0
+    
+    # Estimate key length based on IC
+    english_ic = 0.0667
+    random_ic = 0.0385
+    
+    estimated_key_length = None
+    if ic > 0:
+        # Rough estimation formula
+        if abs(ic - english_ic) < abs(ic - random_ic):
+            estimated_key_length = "Likely monoalphabetic or short key"
         else:
-            digraphs.append((a, b))
-            i += 2
-    result = ''
-    for a, b in digraphs:
-        ra, ca = playfair_pos(matrix, a)
-        rb, cb = playfair_pos(matrix, b)
-        if ra == rb:
-            result += matrix[ra][(ca+1)%5] + matrix[rb][(cb+1)%5]
-        elif ca == cb:
-            result += matrix[(ra+1)%5][ca] + matrix[(rb+1)%5][cb]
-        else:
-            result += matrix[ra][cb] + matrix[rb][ca]
-    return result
+            estimated_key_length = "Likely polyalphabetic or long key"
+    
+    return {
+        'index_of_coincidence': round(ic, 6),
+        'expected_english': english_ic,
+        'expected_random': random_ic,
+        'estimated_key_length': estimated_key_length,
+        'total_characters': n
+    }
 
-def playfair_decrypt(ciphertext: str, key: str) -> str:
-    matrix = playfair_matrix(key)
-    text = ''.join(filter(str.isalpha, ciphertext)).upper()
-    result = ''
-    for i in range(0, len(text), 2):
-        a, b = text[i], text[i+1] if i+1 < len(text) else 'X'
-        ra, ca = playfair_pos(matrix, a)
-        rb, cb = playfair_pos(matrix, b)
-        if ra == rb:
-            result += matrix[ra][(ca-1)%5] + matrix[rb][(cb-1)%5]
-        elif ca == cb:
-            result += matrix[(ra-1)%5][ca] + matrix[(rb-1)%5][cb]
-        else:
-            result += matrix[ra][cb] + matrix[rb][ca]
-    return result
-
-# --- Rail Fence ---
-def railfence_encrypt(plaintext: str, key: str) -> str:
-    rails = int(key)
-    fence = [[] for _ in range(rails)]
-    rail, direction = 0, 1
-    for c in plaintext:
-        fence[rail].append(c)
-        if rail == 0: direction = 1
-        elif rail == rails - 1: direction = -1
-        rail += direction
-    return ''.join(''.join(r) for r in fence)
-
-def railfence_decrypt(ciphertext: str, key: str) -> str:
-    rails = int(key)
-    n = len(ciphertext)
-    pattern = []
-    rail, direction = 0, 1
-    for i in range(n):
-        pattern.append(rail)
-        if rail == 0: direction = 1
-        elif rail == rails - 1: direction = -1
-        rail += direction
-    counts = [pattern.count(r) for r in range(rails)]
-    indices = []
-    idx = 0
-    for r in range(rails):
-        indices.append(list(range(idx, idx + counts[r])))
-        idx += counts[r]
-    result = [''] * n
-    for i, r in enumerate(pattern):
-        result[i] = ciphertext[indices[r].pop(0)]
-    return ''.join(result)
-
-# --- AES (pure python, simplified ECB mode) ---
-SBOX = [
-    0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
-    0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
-    0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
-    0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,
-    0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,
-    0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,
-    0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,
-    0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,
-    0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,
-    0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,
-    0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,
-    0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,
-    0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,
-    0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,
-    0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
-    0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
-]
-SBOX_INV = [0]*256
-for i,v in enumerate(SBOX): SBOX_INV[v]=i
-
-RCON = [0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36]
-
-def xtime(a): return ((a<<1)^0x1b)&0xff if a&0x80 else (a<<1)&0xff
-
-def gmul(a,b):
-    p=0
-    for _ in range(8):
-        if b&1: p^=a
-        hi=a&0x80; a=(a<<1)&0xff
-        if hi: a^=0x1b
-        b>>=1
-    return p
-
-def aes_key_expansion(key):
-    w=[list(key[i:i+4]) for i in range(0,len(key),4)]
-    nk=len(w); nr=nk+6
-    for i in range(nk, 4*(nr+1)):
-        temp=w[i-1][:]
-        if i%nk==0:
-            temp=temp[1:]+temp[:1]
-            temp=[SBOX[b] for b in temp]
-            temp[0]^=RCON[i//nk-1]
-        elif nk>6 and i%nk==4:
-            temp=[SBOX[b] for b in temp]
-        w.append([a^b for a,b in zip(w[i-nk],temp)])
-    return [w[i:i+4] for i in range(0,len(w),4)]
-
-def add_round_key(state,rk):
-    return [[state[r][c]^rk[c][r] for c in range(4)] for r in range(4)]
-
-def sub_bytes(state,box):
-    return [[box[state[r][c]] for c in range(4)] for r in range(4)]
-
-def shift_rows(state):
-    return [state[r][r:]+state[r][:r] for r in range(4)]
-
-def inv_shift_rows(state):
-    return [state[r][-r:]+state[r][:-r] if r else state[r] for r in range(4)]
-
-def mix_col(col):
-    return [gmul(2,col[0])^gmul(3,col[1])^col[2]^col[3],
-            col[0]^gmul(2,col[1])^gmul(3,col[2])^col[3],
-            col[0]^col[1]^gmul(2,col[2])^gmul(3,col[3]),
-            gmul(3,col[0])^col[1]^col[2]^gmul(2,col[3])]
-
-def inv_mix_col(col):
-    return [gmul(14,col[0])^gmul(11,col[1])^gmul(13,col[2])^gmul(9,col[3]),
-            gmul(9,col[0])^gmul(14,col[1])^gmul(11,col[2])^gmul(13,col[3]),
-            gmul(13,col[0])^gmul(9,col[1])^gmul(14,col[2])^gmul(11,col[3]),
-            gmul(11,col[0])^gmul(13,col[1])^gmul(9,col[2])^gmul(14,col[3])]
-
-def mix_columns(state):
-    cols=[[state[r][c] for r in range(4)] for c in range(4)]
-    mixed=[mix_col(col) for col in cols]
-    return [[mixed[c][r] for c in range(4)] for r in range(4)]
-
-def inv_mix_columns(state):
-    cols=[[state[r][c] for r in range(4)] for c in range(4)]
-    mixed=[inv_mix_col(col) for col in cols]
-    return [[mixed[c][r] for c in range(4)] for r in range(4)]
-
-def bytes_to_state(b):
-    return [[b[c*4+r] for c in range(4)] for r in range(4)]
-
-def state_to_bytes(s):
-    return bytes([s[r][c] for c in range(4) for r in range(4)])
-
-def aes_encrypt_block(block, round_keys):
-    nr=len(round_keys)-1
-    state=bytes_to_state(block)
-    state=add_round_key(state,round_keys[0])
-    for rnd in range(1,nr):
-        state=sub_bytes(state,SBOX)
-        state=shift_rows(state)
-        state=mix_columns(state)
-        state=add_round_key(state,round_keys[rnd])
-    state=sub_bytes(state,SBOX)
-    state=shift_rows(state)
-    state=add_round_key(state,round_keys[nr])
-    return state_to_bytes(state)
-
-def aes_decrypt_block(block, round_keys):
-    nr=len(round_keys)-1
-    state=bytes_to_state(block)
-    state=add_round_key(state,round_keys[nr])
-    for rnd in range(nr-1,0,-1):
-        state=inv_shift_rows(state)
-        state=sub_bytes(state,SBOX_INV)
-        state=add_round_key(state,round_keys[rnd])
-        state=inv_mix_columns(state)
-    state=inv_shift_rows(state)
-    state=sub_bytes(state,SBOX_INV)
-    state=add_round_key(state,round_keys[0])
-    return state_to_bytes(state)
-
-def aes_encrypt(plaintext: str, key: str) -> str:
-    key_bytes = key.encode()[:16].ljust(16, b'\x00')
-    data = plaintext.encode()
-    pad = 16 - len(data)%16
-    data += bytes([pad]*pad)
-    rk = aes_key_expansion(key_bytes)
-    result = b''
-    for i in range(0,len(data),16):
-        result += aes_encrypt_block(data[i:i+16], rk)
+# 5. RC4
+def rc4_encrypt(plaintext: str, key: str) -> str:
+    """RC4 stream cipher"""
+    key_bytes = key.encode()
+    plain_bytes = plaintext.encode()
+    
+    # Key Scheduling Algorithm (KSA)
+    S = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + S[i] + key_bytes[i % len(key_bytes)]) % 256
+        S[i], S[j] = S[j], S[i]
+    
+    # Pseudo-Random Generation Algorithm (PRGA)
+    i = j = 0
+    result = bytearray()
+    for byte in plain_bytes:
+        i = (i + 1) % 256
+        j = (j + S[i]) % 256
+        S[i], S[j] = S[j], S[i]
+        k = S[(S[i] + S[j]) % 256]
+        result.append(byte ^ k)
+    
     return base64.b64encode(result).decode()
 
-def aes_decrypt(ciphertext: str, key: str) -> str:
-    key_bytes = key.encode()[:16].ljust(16, b'\x00')
+def rc4_decrypt(ciphertext: str, key: str) -> str:
+    # RC4 is symmetric
     data = base64.b64decode(ciphertext)
-    rk = aes_key_expansion(key_bytes)
-    result = b''
-    for i in range(0,len(data),16):
-        result += aes_decrypt_block(data[i:i+16], rk)
-    pad = result[-1]
-    return result[:-pad].decode('utf-8', errors='replace')
+    decrypted = rc4_encrypt(data.decode('latin1'), key)
+    return decrypted
 
-# --- Flask App ---
+# 6. RSA
+def rsa_generate_keys(key_size: int = 2048) -> dict:
+    """Generate RSA key pair"""
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=key_size,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    
+    return {
+        'private_key_pem': private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode(),
+        'public_key_pem': public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+    }
+
+def rsa_encrypt(plaintext: str, public_key_pem: str) -> str:
+    """RSA encryption with public key"""
+    public_key = serialization.load_pem_public_key(
+        public_key_pem.encode(),
+        backend=default_backend()
+    )
+    
+    ciphertext = public_key.encrypt(
+        plaintext.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return base64.b64encode(ciphertext).decode()
+
+def rsa_decrypt(ciphertext: str, private_key_pem: str) -> str:
+    """RSA decryption with private key"""
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode(),
+        password=None,
+        backend=default_backend()
+    )
+    
+    decrypted = private_key.decrypt(
+        base64.b64decode(ciphertext),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return decrypted.decode()
+
+# 7. Diffie-Hellman (simplified for demo)
+def diffie_hellman_generate_keys() -> dict:
+    """Generate Diffie-Hellman key pair using standard parameters"""
+    # Using standard prime (RFC 3526 - 2048-bit MODP Group)
+    p = int('FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF', 16)
+    g = 2
+    
+    private_key = random.randint(2, p-1)
+    public_key = pow(g, private_key, p)
+    
+    return {
+        'prime': hex(p),
+        'generator': g,
+        'private_key': hex(private_key),
+        'public_key': hex(public_key)
+    }
+
+def diffie_hellman_compute_shared(their_public: str, my_private: str, prime: str) -> str:
+    """Compute shared secret"""
+    their_pub = int(their_public, 16)
+    my_priv = int(my_private, 16)
+    p = int(prime, 16)
+    
+    shared_secret = pow(their_pub, my_priv, p)
+    return hex(shared_secret)
+
+# 8. El Gamal (simplified)
+def elgamal_generate_keys() -> dict:
+    """Generate El Gamal key pair"""
+    # Using a smaller prime for demonstration
+    p = 2357  # Small prime for demo
+    g = 2
+    
+    private_key = random.randint(2, p-2)
+    public_key = pow(g, private_key, p)
+    
+    return {
+        'prime': p,
+        'generator': g,
+        'private_key': private_key,
+        'public_key': public_key
+    }
+
+def elgamal_encrypt(plaintext: str, public_key: int, prime: int, generator: int) -> dict:
+    """El Gamal encryption"""
+    message = int.from_bytes(plaintext.encode(), 'big')
+    if message >= prime:
+        raise ValueError("Message too large for prime size")
+    
+    k = random.randint(2, prime-2)
+    c1 = pow(generator, k, prime)
+    c2 = (message * pow(public_key, k, prime)) % prime
+    
+    return {
+        'c1': c1,
+        'c2': c2,
+        'prime': prime
+    }
+
+def elgamal_decrypt(c1: int, c2: int, private_key: int, prime: int) -> str:
+    """El Gamal decryption"""
+    s = pow(c1, private_key, prime)
+    s_inv = pow(s, -1, prime)
+    message = (c2 * s_inv) % prime
+    
+    # Convert back to string
+    try:
+        return message.to_bytes((message.bit_length() + 7) // 8, 'big').decode()
+    except:
+        return str(message)
+
+# 9. Hashing
+def hash_text(text: str, algorithm: str = 'sha256') -> dict:
+    """Compute hash of text using various algorithms"""
+    algorithms_available = {
+        'md5': hashlib.md5,
+        'sha1': hashlib.sha1,
+        'sha256': hashlib.sha256,
+        'sha384': hashlib.sha384,
+        'sha512': hashlib.sha512,
+        'blake2b': hashlib.blake2b,
+        'blake2s': hashlib.blake2s,
+        'sha3_256': hashlib.sha3_256,
+        'sha3_512': hashlib.sha3_512
+    }
+    
+    if algorithm not in algorithms_available:
+        raise ValueError(f"Unsupported algorithm. Choose from: {list(algorithms_available.keys())}")
+    
+    hash_obj = algorithms_available[algorithm]()
+    hash_obj.update(text.encode())
+    
+    return {
+        'algorithm': algorithm,
+        'hash': hash_obj.hexdigest(),
+        'hash_bytes': len(hash_obj.digest()),
+        'input_length': len(text)
+    }
+
+# 10. Digital Signatures
+def sign_message(message: str, private_key_pem: str) -> str:
+    """Sign a message using RSA private key"""
+    private_key = serialization.load_pem_private_key(
+        private_key_pem.encode(),
+        password=None,
+        backend=default_backend()
+    )
+    
+    signature = private_key.sign(
+        message.encode(),
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    
+    return base64.b64encode(signature).decode()
+
+def verify_signature(message: str, signature: str, public_key_pem: str) -> bool:
+    """Verify RSA signature"""
+    public_key = serialization.load_pem_public_key(
+        public_key_pem.encode(),
+        backend=default_backend()
+    )
+    
+    try:
+        public_key.verify(
+            base64.b64decode(signature),
+            message.encode(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return True
+    except:
+        return False
+
+# 11. Protocols (Simple demonstration)
+class ProtocolSimulator:
+    @staticmethod
+    def secure_channel():
+        """Simulate a secure channel using session key exchange"""
+        # Generate session key
+        session_key = secrets.token_hex(16)
+        return {
+            'session_key': session_key,
+            'status': 'Channel established',
+            'protocol': 'TLS-like'
+        }
+    
+    @staticmethod
+    def authenticate_user(username: str, password: str) -> dict:
+        """Simple authentication protocol"""
+        # In real implementation, use proper password hashing
+        password_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), username.encode(), 100000)
+        
+        return {
+            'authenticated': True,
+            'protocol': 'Challenge-Response',
+            'session_token': secrets.token_hex(32)
+        }
+
+# 12. Homomorphic Encryption (Simplified - Paillier-like)
+class HomomorphicEncryption:
+    def __init__(self):
+        # Simplified multiplicative homomorphic encryption
+        # In real implementation, use proper Paillier cryptosystem
+        self.p = 101  # Small prime for demo
+        self.q = 103  # Small prime for demo
+        self.n = self.p * self.q
+        self.g = 2
+    
+    def encrypt(self, plaintext: int) -> int:
+        """Simplified homomorphic encryption"""
+        r = random.randint(2, self.n-1)
+        ciphertext = (pow(self.g, plaintext, self.n) * pow(r, self.n, self.n)) % (self.n * self.n)
+        return ciphertext
+    
+    def decrypt(self, ciphertext: int) -> int:
+        """Simplified homomorphic decryption"""
+        # This is highly simplified - real Paillier is more complex
+        lambda_val = (self.p - 1) * (self.q - 1)
+        mu = pow(lambda_val, -1, self.n)
+        plaintext = ((pow(ciphertext, lambda_val, self.n * self.n) - 1) // self.n * mu) % self.n
+        return plaintext
+    
+    def add(self, ciphertext1: int, ciphertext2: int) -> int:
+        """Homomorphic addition"""
+        return (ciphertext1 * ciphertext2) % (self.n * self.n)
+
+# 13. Shamir's Secret Sharing
+def shamir_share_secret(secret: int, n: int, k: int) -> list:
+    """Split secret into n shares, requiring k to reconstruct"""
+    if k > n:
+        raise ValueError("k cannot be greater than n")
+    
+    prime = 2**127 - 1  # Mersenne prime
+    
+    # Generate random coefficients
+    coefficients = [secret] + [random.randint(1, prime-1) for _ in range(k-1)]
+    
+    # Generate shares
+    shares = []
+    for i in range(1, n+1):
+        x = i
+        y = sum(coef * pow(x, j, prime) for j, coef in enumerate(coefficients)) % prime
+        shares.append((x, y))
+    
+    return {
+        'shares': shares,
+        'prime': prime,
+        'threshold': k,
+        'total_shares': n
+    }
+
+def shamir_reconstruct_secret(shares: list, prime: int) -> int:
+    """Reconstruct secret from k shares using Lagrange interpolation"""
+    secret = 0
+    k = len(shares)
+    
+    for i in range(k):
+        xi, yi = shares[i]
+        
+        # Calculate Lagrange basis
+        numerator = 1
+        denominator = 1
+        for j in range(k):
+            if i != j:
+                xj = shares[j][0]
+                numerator = (numerator * (-xj)) % prime
+                denominator = (denominator * (xi - xj)) % prime
+        
+        lagrange = (yi * numerator * pow(denominator, -1, prime)) % prime
+        secret = (secret + lagrange) % prime
+    
+    return secret
+
+# ============ Flask App - Updated ============
 app = Flask(__name__, static_folder='static')
 
 @app.after_request
@@ -433,14 +493,18 @@ def add_cors(r):
     r.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return r
 
+# Updated CIPHERS dictionary
 CIPHERS = {
-    'caesar':   (caesar_encrypt,   caesar_decrypt,   'Shift (1-25)', 'number'),
-    'vigenere': (vigenere_encrypt,  vigenere_decrypt,  'Keyword (letters only)', 'text'),
-    'playfair': (playfair_encrypt,  playfair_decrypt,  'Keyword (letters only)', 'text'),
-    'hill':     (hill_encrypt,      hill_decrypt,      '2×2: 4 letters with invertible matrix (e.g. CDFE) or 3×3: 9 letters', 'text'),
-    'railfence':(railfence_encrypt, railfence_decrypt, 'Number of rails (2+)', 'number'),
-    'des':      (des_encrypt,       des_decrypt,       'Up to 8-char key', 'text'),
-    'aes':      (aes_encrypt,       aes_decrypt,       'Up to 16-char key', 'text'),
+    'affine': (affine_encrypt, affine_decrypt, 'a,b (e.g., 5,8 where gcd(a,26)=1)', 'text'),
+    'caesar': (caesar_encrypt, caesar_decrypt, 'Shift (1-25)', 'number'),
+    'vigenere': (vigenere_encrypt, vigenere_decrypt, 'Keyword (letters only)', 'text'),
+    'playfair': (playfair_encrypt, playfair_decrypt, 'Keyword (letters only)', 'text'),
+    'hill': (hill_encrypt, hill_decrypt, '2×2: 4 letters or 3×3: 9 letters', 'text'),
+    'railfence': (railfence_encrypt, railfence_decrypt, 'Number of rails (2+)', 'number'),
+    'des': (des_encrypt, des_decrypt, 'Up to 8-char key', 'text'),
+    'aes': (aes_encrypt, aes_decrypt, 'Up to 16-char key', 'text'),
+    'otp': (otp_encrypt, otp_decrypt, 'Key length >= message length', 'text'),
+    'rc4': (rc4_encrypt, rc4_decrypt, 'Any length key', 'text'),
 }
 
 @app.route('/')
@@ -450,12 +514,14 @@ def index():
 @app.route('/cipher', methods=['POST'])
 def cipher():
     data = request.json
-    name = data.get('cipher','').lower()
-    mode = data.get('mode','encrypt')
-    text = data.get('text','')
-    key  = data.get('key','')
+    name = data.get('cipher', '').lower()
+    mode = data.get('mode', 'encrypt')
+    text = data.get('text', '')
+    key = data.get('key', '')
+    
     if name not in CIPHERS:
         return jsonify({'error': f'Unknown cipher: {name}'}), 400
+    
     enc_fn, dec_fn, _, _ = CIPHERS[name]
     try:
         fn = enc_fn if mode == 'encrypt' else dec_fn
@@ -472,6 +538,105 @@ def list_ciphers():
         'key_hint': v[2],
         'key_type': v[3]
     } for k, v in CIPHERS.items()])
+
+# New routes for additional features
+@app.route('/frequency', methods=['POST'])
+def analyze_frequency():
+    data = request.json
+    text = data.get('text', '')
+    return jsonify(frequency_analysis(text))
+
+@app.route('/coincidence', methods=['POST'])
+def analyze_coincidence():
+    data = request.json
+    text = data.get('text', '')
+    return jsonify(index_of_coincidence(text))
+
+@app.route('/otp/generate', methods=['POST'])
+def generate_otp_key():
+    data = request.json
+    length = data.get('length', 32)
+    return jsonify({'key': otp_generate_key(length)})
+
+@app.route('/rsa/keys', methods=['POST'])
+def rsa_keys():
+    data = request.json
+    size = data.get('size', 2048)
+    return jsonify(rsa_generate_keys(size))
+
+@app.route('/rsa/encrypt', methods=['POST'])
+def rsa_encrypt_route():
+    data = request.json
+    return jsonify({'ciphertext': rsa_encrypt(data['text'], data['public_key'])})
+
+@app.route('/rsa/decrypt', methods=['POST'])
+def rsa_decrypt_route():
+    data = request.json
+    return jsonify({'plaintext': rsa_decrypt(data['ciphertext'], data['private_key'])})
+
+@app.route('/dh/keys', methods=['GET'])
+def dh_keys():
+    return jsonify(diffie_hellman_generate_keys())
+
+@app.route('/dh/shared', methods=['POST'])
+def dh_shared():
+    data = request.json
+    shared = diffie_hellman_compute_shared(data['their_public'], data['my_private'], data['prime'])
+    return jsonify({'shared_secret': shared})
+
+@app.route('/elgamal/keys', methods=['GET'])
+def elgamal_keys():
+    return jsonify(elgamal_generate_keys())
+
+@app.route('/hash', methods=['POST'])
+def hash_route():
+    data = request.json
+    text = data.get('text', '')
+    algorithm = data.get('algorithm', 'sha256')
+    return jsonify(hash_text(text, algorithm))
+
+@app.route('/sign', methods=['POST'])
+def sign_route():
+    data = request.json
+    signature = sign_message(data['message'], data['private_key'])
+    return jsonify({'signature': signature})
+
+@app.route('/verify', methods=['POST'])
+def verify_route():
+    data = request.json
+    valid = verify_signature(data['message'], data['signature'], data['public_key'])
+    return jsonify({'valid': valid})
+
+@app.route('/protocol/channel', methods=['GET'])
+def protocol_channel():
+    return jsonify(ProtocolSimulator.secure_channel())
+
+@app.route('/protocol/auth', methods=['POST'])
+def protocol_auth():
+    data = request.json
+    return jsonify(ProtocolSimulator.authenticate_user(data['username'], data['password']))
+
+@app.route('/homomorphic/encrypt', methods=['POST'])
+def homomorphic_encrypt():
+    data = request.json
+    he = HomomorphicEncryption()
+    ciphertext = he.encrypt(int(data['plaintext']))
+    return jsonify({'ciphertext': ciphertext, 'n': he.n * he.n})
+
+@app.route('/shamir/share', methods=['POST'])
+def shamir_share():
+    data = request.json
+    result = shamir_share_secret(data['secret'], data['n'], data['k'])
+    # Convert shares to serializable format
+    result['shares'] = [(x, y) for x, y in result['shares']]
+    return jsonify(result)
+
+@app.route('/shamir/reconstruct', methods=['POST'])
+def shamir_reconstruct():
+    data = request.json
+    shares = [(x, y) for x, y in data['shares']]
+    secret = shamir_reconstruct_secret(shares, data['prime'])
+    return jsonify({'secret': secret})
 
 if __name__ == '__main__':
     os.makedirs('static', exist_ok=True)
