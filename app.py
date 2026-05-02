@@ -13,9 +13,294 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import padding as sym_padding
 
-# --- Existing implementations (DES, Hill, Caesar, Vigenere, Playfair, RailFence, AES) ---
-# [Keep all your existing implementations here...]
+# --- Classic ciphers (Caesar, Vigenère, Playfair, Hill, Rail-Fence, DES, AES) ---
+
+def caesar_encrypt(plaintext: str, key: str) -> str:
+    shift = int(key) % 26
+    if shift == 0:
+        raise ValueError("Shift must be 1-25")
+    out = []
+    for c in plaintext:
+        if c.isalpha():
+            base = ord('A') if c.isupper() else ord('a')
+            out.append(chr((ord(c) - base + shift) % 26 + base))
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
+def caesar_decrypt(ciphertext: str, key: str) -> str:
+    shift = int(key) % 26
+    if shift == 0:
+        raise ValueError("Shift must be 1-25")
+    return caesar_encrypt(ciphertext, str(26 - shift))
+
+
+def vigenere_encrypt(plaintext: str, key: str) -> str:
+    kw = ''.join(k.upper() for k in key if k.isalpha())
+    if not kw:
+        raise ValueError("Keyword must contain letters")
+    ki = 0
+    out = []
+    for c in plaintext:
+        if c.isalpha():
+            base = ord('A') if c.isupper() else ord('a')
+            kv = ord(kw[ki % len(kw)]) - ord('A')
+            out.append(chr((ord(c) - base + kv) % 26 + base))
+            ki += 1
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
+def vigenere_decrypt(ciphertext: str, key: str) -> str:
+    kw = ''.join(k.upper() for k in key if k.isalpha())
+    if not kw:
+        raise ValueError("Keyword must contain letters")
+    ki = 0
+    out = []
+    for c in ciphertext:
+        if c.isalpha():
+            base = ord('A') if c.isupper() else ord('a')
+            kv = ord(kw[ki % len(kw)]) - ord('A')
+            out.append(chr((ord(c) - base - kv) % 26 + base))
+            ki += 1
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
+def _playfair_square(keyword: str) -> list:
+    seen = set()
+    letters = []
+    for c in (keyword.upper().replace('J', 'I')):
+        if c.isalpha() and c != 'J' and c not in seen:
+            seen.add(c)
+            letters.append(c)
+    for c in 'ABCDEFGHIKLMNOPQRSTUVWXYZ':
+        if c not in seen:
+            letters.append(c)
+    return [letters[i:i + 5] for i in range(0, 25, 5)]
+
+
+def _playfair_pos(square: list, ch: str) -> tuple:
+    ch = 'I' if ch.upper() == 'J' else ch.upper()
+    for r in range(5):
+        for c in range(5):
+            if square[r][c] == ch:
+                return r, c
+    raise ValueError(f"Invalid letter for Playfair: {ch}")
+
+
+def playfair_encrypt(plaintext: str, key: str) -> str:
+    kw = ''.join(c for c in key.upper() if c.isalpha()).replace('J', 'I')
+    if not kw:
+        raise ValueError("Keyword must contain letters")
+    square = _playfair_square(kw)
+    clean = ''.join(c.upper().replace('J', 'I') for c in plaintext if c.isalpha())
+    if len(clean) % 2:
+        clean += 'X'
+    pairs = [clean[i:i + 2] for i in range(0, len(clean), 2)]
+    out = []
+    for a, b in pairs:
+        if a == b:
+            b = 'X'
+        ra, ca = _playfair_pos(square, a)
+        rb, cb = _playfair_pos(square, b)
+        if ra == rb:
+            out.append(square[ra][(ca + 1) % 5] + square[rb][(cb + 1) % 5])
+        elif ca == cb:
+            out.append(square[(ra + 1) % 5][ca] + square[(rb + 1) % 5][cb])
+        else:
+            out.append(square[ra][cb] + square[rb][ca])
+    return ''.join(out)
+
+
+def playfair_decrypt(ciphertext: str, key: str) -> str:
+    kw = ''.join(c for c in key.upper() if c.isalpha()).replace('J', 'I')
+    if not kw:
+        raise ValueError("Keyword must contain letters")
+    square = _playfair_square(kw)
+    clean = ''.join(c.upper().replace('J', 'I') for c in ciphertext if c.isalpha())
+    if len(clean) % 2:
+        raise ValueError("Ciphertext length must be even")
+    pairs = [clean[i:i + 2] for i in range(0, len(clean), 2)]
+    out = []
+    for a, b in pairs:
+        ra, ca = _playfair_pos(square, a)
+        rb, cb = _playfair_pos(square, b)
+        if ra == rb:
+            out.append(square[ra][(ca - 1) % 5] + square[rb][(cb - 1) % 5])
+        elif ca == cb:
+            out.append(square[(ra - 1) % 5][ca] + square[(rb - 1) % 5][cb])
+        else:
+            out.append(square[ra][cb] + square[rb][ca])
+    return ''.join(out)
+
+
+def _hill_matrix_from_key(key: str) -> tuple:
+    letters = ''.join(c.upper() for c in key if c.isalpha())
+    n = int(len(letters) ** 0.5)
+    if n * n != len(letters) or n not in (2, 3):
+        raise ValueError("Key must be exactly 4 letters (2×2) or 9 letters (3×3)")
+    mat = [[ord(letters[i * n + j]) - ord('A') for j in range(n)] for i in range(n)]
+    return mat, n
+
+
+def _hill_det_mod(mat: list) -> int:
+    n = len(mat)
+    if n == 2:
+        return (mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0]) % 26
+    # 3×3
+    a, b, c = mat[0]
+    d, e, f = mat[1]
+    g, h, i = mat[2]
+    return (a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)) % 26
+
+
+def _hill_inverse_matrix(mat: list) -> list:
+    n = len(mat)
+    det = _hill_det_mod(mat)
+    det_inv = mod_inverse(det, 26)
+    if det_inv is None:
+        raise ValueError("Matrix not invertible modulo 26; choose another key")
+    if n == 2:
+        a, b = mat[0]
+        c, d = mat[1]
+        return [
+            [(d * det_inv) % 26, ((-b) % 26 * det_inv) % 26],
+            [((-c) % 26 * det_inv) % 26, (a * det_inv) % 26],
+        ]
+    # 3×3 adjugate
+    def minor(mi, mj):
+        sub = [[mat[r][c] for c in range(n) if c != mj] for r in range(n) if r != mi]
+        return (sub[0][0] * sub[1][1] - sub[0][1] * sub[1][0]) % 26
+
+    adj = [[0] * 3 for _ in range(3)]
+    signs = ((1, -1, 1), (-1, 1, -1), (1, -1, 1))
+    for i in range(3):
+        for j in range(3):
+            adj[j][i] = (signs[i][j] * minor(i, j)) % 26
+    return [[(adj[i][j] * det_inv) % 26 for j in range(3)] for i in range(3)]
+
+
+def _hill_transform(text: str, mat: list, n: int) -> str:
+    letters = [c for c in text.upper() if c.isalpha()]
+    if not letters:
+        raise ValueError("No letters to process")
+    if len(letters) % n:
+        letters += ['X'] * (n - len(letters) % n)
+    out_letters = []
+    for i in range(0, len(letters), n):
+        block = [ord(letters[i + j]) - ord('A') for j in range(n)]
+        res = [sum(mat[r][c] * block[c] for c in range(n)) % 26 for r in range(n)]
+        out_letters.extend(chr(x + ord('A')) for x in res)
+    return ''.join(out_letters)
+
+
+def hill_encrypt(plaintext: str, key: str) -> str:
+    mat, n = _hill_matrix_from_key(key)
+    return _hill_transform(plaintext, mat, n)
+
+
+def hill_decrypt(ciphertext: str, key: str) -> str:
+    mat, n = _hill_matrix_from_key(key)
+    inv = _hill_inverse_matrix(mat)
+    return _hill_transform(ciphertext, inv, n)
+
+
+def railfence_encrypt(plaintext: str, key: str) -> str:
+    rails = int(key)
+    if rails < 2:
+        raise ValueError("Number of rails must be at least 2")
+    text = plaintext
+    fence = [[] for _ in range(rails)]
+    r, step = 0, 1
+    for ch in text:
+        fence[r].append(ch)
+        r += step
+        if r == 0 or r == rails - 1:
+            step = -step
+    return ''.join(''.join(row) for row in fence)
+
+
+def railfence_decrypt(ciphertext: str, key: str) -> str:
+    rails = int(key)
+    if rails < 2:
+        raise ValueError("Number of rails must be at least 2")
+    n = len(ciphertext)
+    pattern = []
+    r, step = 0, 1
+    for _ in range(n):
+        pattern.append(r)
+        r += step
+        if r == 0 or r == rails - 1:
+            step = -step
+    counts = [pattern.count(i) for i in range(rails)]
+    rows = []
+    idx = 0
+    for cnt in counts:
+        rows.append(list(ciphertext[idx:idx + cnt]))
+        idx += cnt
+    out = []
+    ptr = [0] * rails
+    for rail in pattern:
+        out.append(rows[rail][ptr[rail]])
+        ptr[rail] += 1
+    return ''.join(out)
+
+
+def _triple_des_key(key: str) -> bytes:
+    k8 = key.encode('utf-8')[:8].ljust(8, b'\0')
+    return k8 + k8 + k8
+
+
+def des_encrypt(plaintext: str, key: str) -> str:
+    k = _triple_des_key(key)
+    padder = sym_padding.PKCS7(64).padder()
+    data = padder.update(plaintext.encode('utf-8')) + padder.finalize()
+    cipher = Cipher(algorithms.TripleDES(k), modes.ECB(), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ct = encryptor.update(data) + encryptor.finalize()
+    return base64.b64encode(ct).decode()
+
+
+def des_decrypt(ciphertext: str, key: str) -> str:
+    k = _triple_des_key(key)
+    cipher = Cipher(algorithms.TripleDES(k), modes.ECB(), backend=default_backend())
+    decryptor = cipher.decryptor()
+    pt = decryptor.update(base64.b64decode(ciphertext)) + decryptor.finalize()
+    unpadder = sym_padding.PKCS7(64).unpadder()
+    return (unpadder.update(pt) + unpadder.finalize()).decode('utf-8')
+
+
+def _aes_key_bytes(key: str) -> bytes:
+    return key.encode('utf-8')[:16].ljust(16, b'\0')
+
+
+def aes_encrypt(plaintext: str, key: str) -> str:
+    k = _aes_key_bytes(key)
+    iv = secrets.token_bytes(16)
+    padder = sym_padding.PKCS7(128).padder()
+    data = padder.update(plaintext.encode('utf-8')) + padder.finalize()
+    cipher = Cipher(algorithms.AES(k), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ct = encryptor.update(data) + encryptor.finalize()
+    return base64.b64encode(iv + ct).decode()
+
+
+def aes_decrypt(ciphertext: str, key: str) -> str:
+    k = _aes_key_bytes(key)
+    raw = base64.b64decode(ciphertext)
+    iv, ct = raw[:16], raw[16:]
+    cipher = Cipher(algorithms.AES(k), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    pt = decryptor.update(ct) + decryptor.finalize()
+    unpadder = sym_padding.PKCS7(128).unpadder()
+    return (unpadder.update(pt) + unpadder.finalize()).decode('utf-8')
+
 
 # ============ NEW IMPLEMENTATIONS ============
 
