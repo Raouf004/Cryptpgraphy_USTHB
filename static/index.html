@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -44,14 +45,14 @@
             flex-wrap: wrap;
             gap: 10px;
             margin-bottom: 20px;
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             padding: 10px;
             border-radius: 10px;
         }
 
         .tab {
             padding: 10px 20px;
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             border: none;
             color: white;
             cursor: pointer;
@@ -60,7 +61,7 @@
         }
 
         .tab:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .tab.active {
@@ -72,7 +73,7 @@
             background: white;
             border-radius: 10px;
             padding: 30px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
         }
 
         .tab-content {
@@ -94,7 +95,9 @@
             color: #333;
         }
 
-        input, select, textarea {
+        input,
+        select,
+        textarea {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -172,6 +175,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -341,7 +345,8 @@
                     <div>
                         <div class="form-group">
                             <label>Shares to Reconstruct (x,y pairs)</label>
-                            <textarea id="reconstructShares" placeholder="Enter shares as: (x1,y1),(x2,y2)..."></textarea>
+                            <textarea id="reconstructShares"
+                                placeholder="Enter shares as: (x1,y1),(x2,y2)..."></textarea>
                         </div>
                         <button onclick="reconstructSecret()">Reconstruct Secret</button>
                         <div id="reconstructResult" class="result" style="display:none; margin-top:10px;"></div>
@@ -428,7 +433,7 @@
                 const data = await response.json();
                 rsaPublicKey = data.public_key_pem;
                 rsaPrivateKey = data.private_key_pem;
-                
+
                 const keysDiv = document.getElementById('rsaKeys');
                 keysDiv.innerHTML = `<h3>Generated Keys</h3>
                     <strong>Public Key:</strong><br>
@@ -444,7 +449,7 @@
         async function executeRSA() {
             const op = document.getElementById('rsaOp').value;
             const input = document.getElementById('rsaInput').value;
-            
+
             if (!rsaPublicKey || !rsaPrivateKey) {
                 alert('Please generate RSA keys first');
                 return;
@@ -452,10 +457,10 @@
 
             try {
                 let endpoint = op === 'encrypt' ? '/rsa/encrypt' : '/rsa/decrypt';
-                const body = op === 'encrypt' 
+                const body = op === 'encrypt'
                     ? { text: input, public_key: rsaPublicKey }
                     : { ciphertext: input, private_key: rsaPrivateKey };
-                
+
                 const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -557,10 +562,10 @@
                 const response = await fetch('/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message, 
-                        signature: currentSignature, 
-                        public_key: rsaPublicKey 
+                    body: JSON.stringify({
+                        message,
+                        signature: currentSignature,
+                        public_key: rsaPublicKey
                     })
                 });
                 const data = await response.json();
@@ -596,9 +601,9 @@
                     <pre>${JSON.stringify(data.shares, null, 2)}</pre>
                     <small>Prime: ${data.prime} | Threshold: ${data.threshold}</small>`;
                 sharesDiv.style.display = 'block';
-                
+
                 // Pre-fill reconstruct field
-                document.getElementById('reconstructShares').value = 
+                document.getElementById('reconstructShares').value =
                     JSON.stringify(data.shares.slice(0, k));
             } catch (error) {
                 alert('Error: ' + error.message);
@@ -640,7 +645,7 @@
                 const ciphers = await response.json();
                 const cipherSelect = document.getElementById('cipherType');
                 const hintDiv = document.getElementById('keyHint');
-                
+
                 cipherSelect.addEventListener('change', () => {
                     const selected = cipherSelect.value;
                     const cipher = ciphers.find(c => c.id === selected);
@@ -658,4 +663,5 @@
         loadCipherHints();
     </script>
 </body>
+
 </html>
